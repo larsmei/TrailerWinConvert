@@ -1,8 +1,11 @@
 use std::fs;
-// extern crate dxf;
+use dxf::{Drawing, Point};
+use dxf::entities;
 use clap::Parser;
+use dxf::entities::{Circle, Entity, EntityType, Line};
 
-/// Simple converter between cor and dxf
+/// Simple converter between .cor and .dxf files.
+/// Currently full circle, lines and polylines with line-segments supported
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -13,7 +16,7 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    println!("{args:?}");
+    //println!("{args:?}");
     let filename = &args.file;
     let filetype = filename.as_str().chars().rev().take(3).collect::<String>();
     let filetype = filetype.chars().rev().collect::<String>();
@@ -25,7 +28,7 @@ fn main() {
     }
     else if filetype.eq_ignore_ascii_case(&cor) {
         println!("reading file {} as COR", filename);
-        read_cor_file(filename);
+        cor2dxf(filename);
     }
     else {
         println!("file: {} not supported!", filename);
@@ -58,8 +61,8 @@ enum Gobject {
     cirle,
     none,
 }
-fn read_cor_file(filename: &str) {
-    println!("reading file {}", filename);
+fn cor2dxf(filename: &str) {
+    //println!("reading file {}", filename);
     let mut polylines : Vec<polyline> = Vec::new();
     let mut circles : Vec<circle> = Vec::new();
     let lines = fs::read_to_string(&filename).expect("Unable to read file");
@@ -94,7 +97,7 @@ fn read_cor_file(filename: &str) {
                     read = Reading::y;
                 }
                 else if (read == Reading::y) {
-                    println!("parsing {} as float",line.trim());
+                    //println!("parsing {} as float",line.trim());
                     let y:f64 = line.trim().parse().unwrap();
                     circ.y=y;
                     circles.push(circ);
@@ -121,7 +124,32 @@ fn read_cor_file(filename: &str) {
             }
         }
     }
-    println!("{:?}",polylines);
-    println!("{:?}",circles);
+    //println!("{:?}",polylines);
+    //println!("{:?}",circles);
+    let prefix: String = filename.split(".").take(1).collect();
+    let dxfout= format!("{}.dxf",prefix);
+    write_dxf(&dxfout, &polylines, &circles);
+}
 
+fn write_dxf(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle> ) {
+    let mut drawing = Drawing::new();
+    //drawing.add_entity(Entity::new(EntityType::Line(Line::default())));
+    println!("writing dxf to {}", filename);
+    for polyline in polylines {
+        //println!("{:?}",polyline);
+        let len = polyline.x.len();
+        for  i in 1..len  {
+            let p1 = Point::new(polyline.x[i-1],polyline.y[i-1],0.0);
+            let p2 = Point::new(polyline.x[i],polyline.y[i],0.0);
+            drawing.add_entity(Entity::new(EntityType::Line(Line::new(p1, p2))));
+            //println!("{:?}",(polyline.x[i],polyline.y[i]));
+        }
+
+    }
+    for circ in circles {
+        //println!("{:?}",circ);
+        let center= Point::new(circ.x,circ.y,0.0);
+        drawing.add_entity(Entity::new(EntityType::Circle(Circle::new(center,circ.radius))));
+    }
+    drawing.save_file(filename).unwrap();
 }
