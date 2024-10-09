@@ -1,6 +1,7 @@
+use std::string::String;
 use std::fs;
+use clap::builder::Str;
 use dxf::{Drawing, Point};
-use dxf::entities;
 use clap::Parser;
 use dxf::entities::{Circle, Entity, EntityType, Line};
 
@@ -129,6 +130,7 @@ fn cor2dxf(filename: &str) {
     let prefix: String = filename.split(".").take(1).collect();
     let dxfout= format!("{}.dxf",prefix);
     write_dxf(&dxfout, &polylines, &circles);
+    write_cor(&dxfout, &polylines, &circles);
 }
 
 fn write_dxf(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle> ) {
@@ -152,4 +154,25 @@ fn write_dxf(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle> ) 
         drawing.add_entity(Entity::new(EntityType::Circle(Circle::new(center,circ.radius))));
     }
     drawing.save_file(filename).unwrap();
+}
+
+fn write_cor(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle>) {
+    println!("writing cor to {}", filename);
+    let mut lines: Vec<String> = Vec::new();
+    for polyline in polylines {
+        lines.push("PD".to_owned());
+        for i in 0..polyline.x.len() {
+            lines.push(format!("{}",polyline.x[i]));
+            lines.push(format!("{}",polyline.y[i]));
+        }
+        lines.push("PU".to_owned());
+    }
+    for circle in circles {
+        lines.push("CI".to_owned());
+        lines.push(format!("{}",circle.radius));
+        lines.push(format!("{}",circle.x));
+        lines.push(format!("{}",circle.y));
+        lines.push("PU".to_owned());
+    }
+    println!("{:?}",lines);
 }
