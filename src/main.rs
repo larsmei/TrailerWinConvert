@@ -1,15 +1,17 @@
 use std::string::String;
 use std::fs;
-use std::fs::FileTimes;
 use std::io::Write;
-use clap::builder::Str;
 use dxf::{Drawing, Point};
 use clap::Parser;
-use dxf::entities::{Circle, Entity, EntityType, Line, Polyline};
+use dxf::entities::{Arc, Circle, Entity, EntityType, Line};
 
+/// TrailerWinConvert
 /// Simple converter between .cor and .dxf files.
-/// Currently full circle, lines and polylines with line-segments supported
-/// no support for polyline from dxf to cor
+/// Supported entities dxf -> cor:
+/// line, circle, arc
+/// Supported entities cor -> dxf:
+/// line, Polyline, circle, arc
+/// written by Lars Meindl, lars.meindl@googlemail.com
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -22,16 +24,15 @@ fn main() {
     let args = Args::parse();
     //println!("{args:?}");
     let filename = &args.file;
-    let filetype = filename.as_str().chars().rev().take(3).collect::<String>();
-    let filetype = filetype.chars().rev().collect::<String>();
+    let suffix = filename.split(".").last().unwrap();
     let dxf = String::from("dxf");
     let cor = String::from("cor");
 
-    if filetype.eq_ignore_ascii_case(&dxf) {
+    if suffix.eq_ignore_ascii_case(&dxf) {
         println!("reading file {} as DXF", filename);
         dxf2cor(filename);
     }
-    else if filetype.eq_ignore_ascii_case(&cor) {
+    else if suffix.eq_ignore_ascii_case(&cor) {
         println!("reading file {} as COR", filename);
         cor2dxf(filename);
     }
@@ -42,19 +43,18 @@ fn main() {
 }
 
 #[derive(Clone, Debug)]
-struct polyline {
+struct TwPolyline {
     x: Vec<f64>,
     y: Vec<f64>,
 }
 #[derive(Debug, Clone, Copy)]
-struct circle {
+struct TwCircle {
     radius: f64,
     x: f64,
     y:f64,
 }
-
 #[derive(Debug, Clone, Copy)]
-struct arc {
+struct TwArc {
     radius: f64,
     x: f64,
     y: f64,
@@ -64,77 +64,113 @@ struct arc {
 
 #[derive(PartialEq)]
 enum Reading {
-    x,
-    y,
-    radius,
+    X,
+    Y,
+    Radius,
+    Start,
+    End,
 }
 
 #[derive(PartialEq)]
 enum Gobject {
-    polyline,
-    cirle,
-    arc,
-    none,
+    Polyline,
+    Circle,
+    Arc,
+    None,
 }
 fn cor2dxf(filename: &str) {
     //println!("reading file {}", filename);
-    let mut polylines : Vec<polyline> = Vec::new();
-    let mut circles : Vec<circle> = Vec::new();
+    let mut polylines : Vec<TwPolyline> = Vec::new();
+    let mut circles : Vec<TwCircle> = Vec::new();
+    let mut arcs : Vec<TwArc> = Vec::new();
     let lines = fs::read_to_string(&filename).expect("Unable to read file");
-    let mut read : Reading = Reading::x;
-    let mut go : Gobject= Gobject::none;
-    let mut circ = circle{radius:0.0, x:0.0, y:0.0};
+    let mut read : Reading = Reading::X;
+    let mut go : Gobject= Gobject::None;
+    let mut circ = TwCircle {radius:0.0, x:0.0, y:0.0};
+    let mut larc = TwArc {radius:0.0, x:0.0, y:0.0, start:0.0, end:0.0};
     for line in lines.lines() {
-        if (line.eq_ignore_ascii_case("pd")) {
-            go = Gobject::polyline;
-            polylines.push(polyline{x:Vec::new(),y:Vec::new()});
-            read = Reading::x;
+        if line.eq_ignore_ascii_case("pd") {
+            go = Gobject::Polyline;
+            polylines.push(TwPolyline {x:Vec::new(),y:Vec::new()});
+            read = Reading::X;
         }
-        else if (line.eq_ignore_ascii_case("ci")) {
-            go = Gobject::cirle;
-            read = Reading::radius;
+        else if line.eq_ignore_ascii_case("ci") {
+            go = Gobject::Circle;
+            read = Reading::Radius;
         }
-        else if (line.eq_ignore_ascii_case("pu")) {
-            go = Gobject::none;
+        else if line.eq_ignore_ascii_case("arc") {
+            go = Gobject::Arc;
+            read = Reading::X;
+        }
+        else if line.eq_ignore_ascii_case("pu") {
+            go = Gobject::None;
         }
         else {
-            if (go == Gobject::cirle){
-                if (read == Reading::radius) {
+            if go == Gobject::Circle {
+                if read == Reading::Radius {
                     //println!("parsing {} as float",line.trim());
                     let radius:f64 = line.trim().parse().unwrap();
                     circ.radius=radius;
-                    read = Reading::x;
+                    read = Reading::X;
                 }
-                else if (read == Reading::x) {
+                else if read == Reading::X {
                     //println!("parsing {} as float",line.trim());
                     let x:f64 = line.trim().parse().unwrap();
                     circ.x=x;
-                    read = Reading::y;
+                    read = Reading::Y;
                 }
-                else if (read == Reading::y) {
+                else if read == Reading::Y {
                     //println!("parsing {} as float",line.trim());
                     let y:f64 = line.trim().parse().unwrap();
                     circ.y=y;
                     circles.push(circ);
-                    read = Reading::radius;
+                    read = Reading::Radius;
                 }
             }
-            if (go == Gobject::polyline ){
-                if (read == Reading::x) {
+            if go == Gobject::Arc {
+                if read == Reading::Radius {
+                    let radius:f64 = line.trim().parse().unwrap();
+                    larc.radius=radius;
+                    read = Reading::Start;
+                }
+                else if read == Reading::X {
+                    let x:f64 = line.trim().parse().unwrap();
+                    larc.x=x;
+                    read = Reading::Y;
+                }
+                else if read == Reading::Y {
+                    let y:f64 = line.trim().parse().unwrap();
+                    larc.y=y;
+                    read = Reading::Radius;
+                }
+                else if read == Reading::Start {
+                    let start:f64 = line.trim().parse().unwrap();
+                    larc.start=start;
+                    read = Reading::End;
+                }
+                else if read == Reading::End {
+                    let end:f64 = line.trim().parse().unwrap();
+                    larc.end=end;
+                    arcs.push(larc);
+                    read = Reading::X;
+                }
+            }
+            if go == Gobject::Polyline{
+                if read == Reading::X {
                     //println!("parsing {} as float",line.trim());
                     let x:f64 = line.trim().parse().unwrap();
                     let mut p = polylines.pop().unwrap();
                     p.x.push(x);
                     polylines.push(p);
-                    read = Reading::y;
+                    read = Reading::Y;
                 }
-                else if ( read == Reading::y) {
+                else if  read == Reading::Y {
                     //println!("parsing {} as float",line.trim());
                     let y:f64 = line.trim().parse().unwrap();
                     let mut p = polylines.pop().unwrap();
                     p.y.push(y);
                     polylines.push(p);
-                    read =Reading::x;
+                    read =Reading::X;
                 }
             }
         }
@@ -143,21 +179,21 @@ fn cor2dxf(filename: &str) {
     //println!("{:?}",circles);
     let prefix: String = filename.split(".").take(1).collect();
     let dxfout= format!("{}_out.dxf",prefix);
-    write_dxf(&dxfout, &polylines, &circles);
+    write_dxf(&dxfout, &polylines, &circles, &arcs);
 }
 
-fn write_dxf(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle> ) {
+fn write_dxf(filename: &str, polylines: &Vec<TwPolyline>, circles: &Vec<TwCircle>, arcs: &Vec<TwArc>) {
     let mut drawing = Drawing::new();
     //drawing.add_entity(Entity::new(EntityType::Line(Line::default())));
     println!("writing dxf to {}", filename);
     for polyline in polylines {
-        //println!("{:?}",polyline);
+        //println!("{:?}",Polyline);
         let len = polyline.x.len();
         for  i in 1..len  {
             let p1 = Point::new(polyline.x[i-1],polyline.y[i-1],0.0);
             let p2 = Point::new(polyline.x[i],polyline.y[i],0.0);
             drawing.add_entity(Entity::new(EntityType::Line(Line::new(p1, p2))));
-            //println!("{:?}",(polyline.x[i],polyline.y[i]));
+            //println!("{:?}",(Polyline.x[i],Polyline.y[i]));
         }
 
     }
@@ -166,10 +202,14 @@ fn write_dxf(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle> ) 
         let center= Point::new(circ.x,circ.y,0.0);
         drawing.add_entity(Entity::new(EntityType::Circle(Circle::new(center,circ.radius))));
     }
+    for larc in arcs {
+        let center= Point::new(larc.x,larc.y,0.0);
+        drawing.add_entity(Entity::new(EntityType::Arc(Arc::new(center,larc.radius,larc.start,larc.end))));
+    }
     drawing.save_file(filename).unwrap();
 }
 
-fn write_cor(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle>, arcs: &Vec<arc> ) {
+fn write_cor(filename: &str, polylines: &Vec<TwPolyline>, circles: &Vec<TwCircle>, arcs: &Vec<TwArc> ) {
     println!("writing cor to {}", filename);
     let mut lines: Vec<String> = Vec::new();
     for polyline in polylines {
@@ -202,15 +242,15 @@ fn write_cor(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle>, a
 }
 
 fn dxf2cor(filename: &str) {
-    let mut polylines : Vec<polyline> = Vec::new();
-    let mut circles : Vec<circle> = Vec::new();
-    let mut arcs : Vec<arc> = Vec::new();
+    let mut polylines : Vec<TwPolyline> = Vec::new();
+    let mut circles : Vec<TwCircle> = Vec::new();
+    let mut arcs : Vec<TwArc> = Vec::new();
     let drawing = Drawing::load_file(filename).unwrap();
     for e in drawing.entities() {
         match e.specific {
             EntityType::Line(ref line) => {
                 //println!("{:?}",line);
-                let mut pline = polyline{x:Vec::new(),y:Vec::new()};
+                let mut pline = TwPolyline {x:Vec::new(),y:Vec::new()};
                 pline.x.push(line.p1.x);
                 pline.x.push(line.p2.x);
                 pline.y.push(line.p1.y);
@@ -219,11 +259,11 @@ fn dxf2cor(filename: &str) {
             }
             EntityType::Circle(ref rcircle) => {
                 //println!("{:?}",circle);
-                circles.push(circle{radius:rcircle.radius,x:rcircle.center.x,y:rcircle.center.y});
+                circles.push(TwCircle {radius:rcircle.radius,x:rcircle.center.x,y:rcircle.center.y});
             }
             EntityType::Arc(ref arc) => {
                 //println!("{:?}",arc);
-                let mut larc = arc{radius:0.0,x:0.0,y:0.0,start:0.0,end:0.0};
+                let mut larc = TwArc {radius:0.0,x:0.0,y:0.0,start:0.0,end:0.0};
                 larc.radius=arc.radius;
                 larc.x=arc.center.x;
                 larc.y=arc.center.y;
