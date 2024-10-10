@@ -1,12 +1,15 @@
 use std::string::String;
 use std::fs;
+use std::fs::FileTimes;
+use std::io::Write;
 use clap::builder::Str;
 use dxf::{Drawing, Point};
 use clap::Parser;
-use dxf::entities::{Circle, Entity, EntityType, Line};
+use dxf::entities::{Circle, Entity, EntityType, Line, Polyline};
 
 /// Simple converter between .cor and .dxf files.
 /// Currently full circle, lines and polylines with line-segments supported
+/// no support for polyline from dxf to cor
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -26,6 +29,7 @@ fn main() {
 
     if filetype.eq_ignore_ascii_case(&dxf) {
         println!("reading file {} as DXF", filename);
+        dxf2cor(filename);
     }
     else if filetype.eq_ignore_ascii_case(&cor) {
         println!("reading file {} as COR", filename);
@@ -128,9 +132,8 @@ fn cor2dxf(filename: &str) {
     //println!("{:?}",polylines);
     //println!("{:?}",circles);
     let prefix: String = filename.split(".").take(1).collect();
-    let dxfout= format!("{}.dxf",prefix);
+    let dxfout= format!("{}_out.dxf",prefix);
     write_dxf(&dxfout, &polylines, &circles);
-    write_cor(&dxfout, &polylines, &circles);
 }
 
 fn write_dxf(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle> ) {
@@ -162,17 +165,46 @@ fn write_cor(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle>) {
     for polyline in polylines {
         lines.push("PD".to_owned());
         for i in 0..polyline.x.len() {
-            lines.push(format!("{}",polyline.x[i]));
-            lines.push(format!("{}",polyline.y[i]));
+            lines.push(format!(" {}",polyline.x[i]));
+            lines.push(format!(" {}",polyline.y[i]));
         }
         lines.push("PU".to_owned());
     }
     for circle in circles {
         lines.push("CI".to_owned());
-        lines.push(format!("{}",circle.radius));
-        lines.push(format!("{}",circle.x));
-        lines.push(format!("{}",circle.y));
+        lines.push(format!(" {}",circle.radius));
+        lines.push(format!(" {}",circle.x));
+        lines.push(format!(" {}",circle.y));
         lines.push("PU".to_owned());
     }
-    println!("{:?}",lines);
+    let mut file = fs::File::create(filename).unwrap();
+    file.write_all(lines.join("\n").as_bytes()).unwrap();
+    //println!("{:?}",lines);
+}
+
+fn dxf2cor(filename: &str) {
+    let mut polylines : Vec<polyline> = Vec::new();
+    let mut circles : Vec<circle> = Vec::new();
+    let drawing = Drawing::load_file(filename).unwrap();
+    for e in drawing.entities() {
+        match e.specific {
+            EntityType::Line(ref line) => {
+                //println!("{:?}",line);
+                let mut pline = polyline{x:Vec::new(),y:Vec::new()};
+                pline.x.push(line.p1.x);
+                pline.x.push(line.p2.x);
+                pline.y.push(line.p1.y);
+                pline.y.push(line.p2.y);
+                polylines.push(pline);
+            }
+            EntityType::Circle(ref rcircle) => {
+                //println!("{:?}",circle);
+                circles.push(circle{radius:rcircle.radius,x:rcircle.center.x,y:rcircle.center.y});
+            }
+            _=> (),
+        }
+    }
+    let prefix: String = filename.split(".").take(1).collect();
+    let corout= format!("{}_out.cor",prefix);
+    write_cor(&corout, &polylines, &circles);
 }
