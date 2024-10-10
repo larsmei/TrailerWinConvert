@@ -178,7 +178,7 @@ fn write_cor(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle>) {
         lines.push("PU".to_owned());
     }
     let mut file = fs::File::create(filename).unwrap();
-    file.write_all(lines.join("\n").as_bytes()).unwrap();
+    file.write_all(lines.join("\r\n").as_bytes()).unwrap();
     //println!("{:?}",lines);
 }
 
