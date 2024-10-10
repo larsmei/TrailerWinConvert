@@ -53,6 +53,15 @@ struct circle {
     y:f64,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct arc {
+    radius: f64,
+    x: f64,
+    y: f64,
+    start: f64,
+    end: f64,
+}
+
 #[derive(PartialEq)]
 enum Reading {
     x,
@@ -64,6 +73,7 @@ enum Reading {
 enum Gobject {
     polyline,
     cirle,
+    arc,
     none,
 }
 fn cor2dxf(filename: &str) {
@@ -159,7 +169,7 @@ fn write_dxf(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle> ) 
     drawing.save_file(filename).unwrap();
 }
 
-fn write_cor(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle>) {
+fn write_cor(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle>, arcs: &Vec<arc> ) {
     println!("writing cor to {}", filename);
     let mut lines: Vec<String> = Vec::new();
     for polyline in polylines {
@@ -177,6 +187,15 @@ fn write_cor(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle>) {
         lines.push(format!(" {}",circle.y));
         lines.push("PU".to_owned());
     }
+    for arc in arcs {
+        lines.push("ARC".to_owned());
+        lines.push(format!(" {}",arc.x));
+        lines.push(format!(" {}",arc.y));
+        lines.push(format!(" {}",arc.radius));
+        lines.push(format!(" {}",arc.start));
+        lines.push(format!(" {}",arc.end));
+        lines.push("PU".to_owned());
+    }
     let mut file = fs::File::create(filename).unwrap();
     file.write_all(lines.join("\r\n").as_bytes()).unwrap();
     //println!("{:?}",lines);
@@ -185,6 +204,7 @@ fn write_cor(filename: &str, polylines: &Vec<polyline>, circles: &Vec<circle>) {
 fn dxf2cor(filename: &str) {
     let mut polylines : Vec<polyline> = Vec::new();
     let mut circles : Vec<circle> = Vec::new();
+    let mut arcs : Vec<arc> = Vec::new();
     let drawing = Drawing::load_file(filename).unwrap();
     for e in drawing.entities() {
         match e.specific {
@@ -201,10 +221,20 @@ fn dxf2cor(filename: &str) {
                 //println!("{:?}",circle);
                 circles.push(circle{radius:rcircle.radius,x:rcircle.center.x,y:rcircle.center.y});
             }
+            EntityType::Arc(ref arc) => {
+                //println!("{:?}",arc);
+                let mut larc = arc{radius:0.0,x:0.0,y:0.0,start:0.0,end:0.0};
+                larc.radius=arc.radius;
+                larc.x=arc.center.x;
+                larc.y=arc.center.y;
+                larc.start=arc.start_angle;
+                larc.end=arc.end_angle;
+                arcs.push(larc);
+            }
             _=> (),
         }
     }
     let prefix: String = filename.split(".").take(1).collect();
     let corout= format!("{}_out.cor",prefix);
-    write_cor(&corout, &polylines, &circles);
+    write_cor(&corout, &polylines, &circles, &arcs);
 }
